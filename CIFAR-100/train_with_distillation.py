@@ -27,6 +27,7 @@ args = parser.parse_args()
 
 gpu_num = 0
 use_cuda = torch.cuda.is_available()
+# data normalize
 transform_train = transforms.Compose([
     transforms.Pad(4, padding_mode='reflect'),
     transforms.RandomHorizontalFlip(),
@@ -47,7 +48,7 @@ trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, 
 testset = torchvision.datasets.CIFAR100(root=args.data_path, train=False, download=True, transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
-# Model
+# Model load_paper_setttings 를 통해 불러오기
 t_net, s_net, args = load_settings.load_paper_settings(args)
 
 # Module for distillation
@@ -69,7 +70,10 @@ criterion_CE = nn.CrossEntropyLoss()
 def train_with_distill(d_net, epoch):
     epoch_start_time = time.time()
     print('\nDistillation epoch: %d' % epoch)
-
+    # Distiller class 를 사용해 feature distillation 하는 과정
+    # 학습 시에는 Distiller class 에 있는 Connector를 사용해 feature distillation을 통한 학습을 진행한다.
+    # d_net에서 학습되는 파라미터는 d_net의 Connecter와 d_net.s_net(student network)이다. (optimizer 확인)
+ 
     d_net.train()
     d_net.s_net.train()
     d_net.t_net.train()
@@ -78,6 +82,7 @@ def train_with_distill(d_net, epoch):
     correct = 0
     total = 0
 
+    # global로 선언한 optimizer를 불러와 작업
     global optimizer
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         if use_cuda:
@@ -88,6 +93,7 @@ def train_with_distill(d_net, epoch):
         outputs, loss_distill = d_net(inputs)
         loss_CE = criterion_CE(outputs, targets)
 
+        # mini-batch를 통한 loss 계산. 논문의 수식 (6)에 있는 a = 1/1000 으로 지정.
         loss = loss_CE + loss_distill.sum() / batch_size / 1000
 
         loss.backward()
@@ -132,14 +138,15 @@ def test(net):
 print('Performance of teacher network')
 test(t_net)
 
+# epoch에 따라 optimizer learning rate 변화하게 하기 위해 아래와 같이 디자인
 for epoch in range(args.epochs):
-    if epoch is 0:
+    if epoch == 0:
         optimizer = optim.SGD([{'params': s_net.parameters()}, {'params': d_net.Connectors.parameters()}],
                               lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
-    elif epoch is (args.epochs // 2):
+    elif epoch == (args.epochs // 2):
         optimizer = optim.SGD([{'params': s_net.parameters()}, {'params': d_net.Connectors.parameters()}],
                               lr=args.lr / 10, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
-    elif epoch is (args.epochs * 3 // 4):
+    elif epoch == (args.epochs * 3 // 4):
         optimizer = optim.SGD([{'params': s_net.parameters()}, {'params': d_net.Connectors.parameters()}],
                               lr=args.lr / 100, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
 
